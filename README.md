@@ -58,6 +58,7 @@ on.
 |---|---|---|
 | **nse-delivery** | real buying against intraday churn; spikes, accumulation, one stock's history | no |
 | **nse-news** | corporate announcements, India's 8-K, tagged by what they say | no |
+| **nse-insider** | PIT filings, bulk and block deals with the buyer named, institutional flow | no |
 | **nse-risk** | position sizing with the full Indian cost stack; answers PASS or BLOCK | no |
 
 More are in progress. Each one is added only once it has been run against live data.
@@ -66,6 +67,8 @@ More are in progress. Each one is added only once it has been run against live d
 
 ```
 nse-delivery  finds where real money moved
+     ↓
+nse-insider   names who bought it, and drops the desks turning their book
      ↓
 nse-news      says what was announced on that date
      ↓
@@ -94,6 +97,10 @@ Each of these was found by checking a live answer against what the documentation
   Industries Limited" and tells you nothing.
 - **Delivery data is published after the close**, around 7pm India time. Before that, today's file
   does not exist, which is different from a day with no delivery.
+- **89% of bulk deals are not positions.** Over 10 days to 2026-10-23, 62 of 70 disclosed bulk
+  deals were the same client on both sides of the same stock on the same day. A desk passing stock
+  through itself crosses the 0.5% threshold on both legs, so it appears twice, at the top, with the
+  biggest numbers. Block deals are the opposite: 16 of 16 were genuinely one-sided.
 - **A block deal can be the whole spike.** One institution buying is a different fact from the same
   volume spread over a thousand accounts.
 
