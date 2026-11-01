@@ -1,0 +1,15 @@
+{
+  "_comment": "Copy to config.json and fill in only what you need. Everything NSE-based works with no configuration at all.",
+
+  "upstox_access_token": "",
+  "_upstox": "Optional. Needed only for intraday candles, live quotes and the fundamentals in nse-results. Get one free at upstox.com/developer. Without it those skills say so and the rest still work.",
+
+  "capital": 100000,
+  "_capital": "Your trading capital in rupees. nse-risk sizes positions against this.",
+
+  "risk_per_trade_percent": 1.0,
+  "_risk": "How much of capital you accept losing on one trade. 1 percent is a common starting point. nse-risk blocks anything above this.",
+
+  "max_positions": 5,
+  "_max_positions": "How many open positions at once before nse-risk refuses a new one."
+}

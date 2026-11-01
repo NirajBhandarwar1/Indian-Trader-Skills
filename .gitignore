@@ -1,0 +1,14 @@
+# Anything the skills collect. Rebuilt by running them.
+nse/
+*.sqlite
+*.sqlite-journal
+
+# Your own configuration, which may hold an Upstox token. Never commit it.
+config.json
+.env
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/

@@ -1,0 +1,11 @@
+{
+  "name": "nse-trader-skills",
+  "owner": { "name": "Niraj Bhandarwar" },
+  "plugins": [
+    {
+      "name": "nse-trader-skills",
+      "source": "./",
+      "description": "Indian stock market skills for Claude: the delivery percentage no US source publishes, corporate announcements, and position sizing that can say no."
+    }
+  ]
+}
