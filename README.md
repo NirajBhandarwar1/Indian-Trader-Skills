@@ -59,6 +59,7 @@ on.
 | **nse-delivery** | real buying against intraday churn; spikes, accumulation, one stock's history | no |
 | **nse-news** | corporate announcements, India's 8-K, tagged by what they say | no |
 | **nse-insider** | PIT filings, bulk and block deals with the buyer named, institutional flow | no |
+| **nse-backtest** | replays a setup over market history against what buying everything did | no |
 | **nse-risk** | position sizing with the full Indian cost stack; answers PASS or BLOCK | no |
 
 More are in progress. Each one is added only once it has been run against live data.
@@ -73,6 +74,8 @@ nse-insider   names who bought it, and drops the desks turning their book
 nse-news      says what was announced on that date
      ↓
 nse-risk      sizes it, or refuses
+
+nse-backtest  tells you whether the rule ever worked, before any of the above
 ```
 
 No skill picks a stock for you, and none of them can place an order.
@@ -97,12 +100,36 @@ Each of these was found by checking a live answer against what the documentation
   Industries Limited" and tells you nothing.
 - **Delivery data is published after the close**, around 7pm India time. Before that, today's file
   does not exist, which is different from a day with no delivery.
+- **A gap through a stop fills at the open, not at the stop.** The first version of the backtester
+  filled every stop at its price, and every setup then reported a worst trade of exactly −5.29% —
+  the stop plus costs, which cannot happen. Fixing it changed the worst breakout trade to −89.86%
+  and found 103 trades that had gapped through. This is the single most flattering assumption a
+  backtest can make.
 - **89% of bulk deals are not positions.** Over 10 days to 2026-10-23, 62 of 70 disclosed bulk
   deals were the same client on both sides of the same stock on the same day. A desk passing stock
   through itself crosses the 0.5% threshold on both legs, so it appears twice, at the top, with the
   biggest numbers. Block deals are the opposite: 16 of 16 were genuinely one-sided.
 - **A block deal can be the whole spike.** One institution buying is a different fact from the same
   volume spread over a thousand accounts.
+
+## What the backtester found
+
+Three months to 2026-10-23, 2,226 symbols, 10-day hold, 5% stop. Baseline (buying anything) was a
+31.6% win rate and **−1.89%**: the market fell, so everything lost money.
+
+| Setup | Trades | Win rate | Average | Edge |
+|---|---|---|---|---|
+| delivery-spike | 57 | 33.3% | **+0.78%** | **+2.67pp** |
+| accumulation | 2,158 | 29.7% | −1.15% | +0.74pp |
+| breakout (control) | 5,235 | 26.9% | −1.36% | +0.53pp |
+
+Only `delivery-spike` made money, and it fired 57 times in 75 days — which is not evidence of
+anything, and the tool says so in its own output. The median return of every setup is **exactly the
+stop**, so more than half of all trades get stopped out and the averages are carried by a few +63%
+and +95% outliers. That is a fragile shape, not an edge.
+
+**The backtester is included so you can disbelieve the other skills.** A pack that only ships
+screeners is a pack that cannot be checked.
 
 ## What these skills never do
 
