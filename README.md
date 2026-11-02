@@ -48,9 +48,10 @@ For position sizing, copy the example and set your capital:
 cp config.example.json config.json
 ```
 
-`config.json` is gitignored. An Upstox token is optional and only needed for intraday candles and
-company fundamentals — the skills that use it say so plainly when it is absent, and the rest carry
-on.
+`config.json` is gitignored. An Upstox token is optional and needed by **one** skill,
+`nse-results`, because the exchange stopped publishing structured financial statements in December
+2024. Get one free at [upstox.com/developer](https://upstox.com/developer). Without it that skill
+says so and exits cleanly; the other five never ask.
 
 ## The skills
 
@@ -61,6 +62,7 @@ on.
 | **nse-insider** | PIT filings, bulk and block deals with the buyer named, institutional flow | no |
 | **nse-scan** | screens the market, with each rule's measured record beside its candidates | no |
 | **nse-backtest** | replays a setup over market history against what buying everything did | no |
+| **nse-results** | four years of accounts and the published ratios, with five misleading lines named | **yes** |
 | **nse-risk** | position sizing with the full Indian cost stack; answers PASS or BLOCK | no |
 
 More are in progress. Each one is added only once it has been run against live data.
@@ -103,6 +105,16 @@ Each of these was found by checking a live answer against what the documentation
   Industries Limited" and tells you nothing.
 - **Delivery data is published after the close**, around 7pm India time. Before that, today's file
   does not exist, which is different from a day with no delivery.
+- **One data source refuses Python outright.** Upstox sits behind Cloudflare, which answers
+  `urllib` with 403 and error 1010, "access denied based on your browser's signature". It is a TLS
+  fingerprint check, so no header satisfies it — a browser user-agent changes nothing. The `curl`
+  binary gets 200 on the same URL with the same token, so `nse-results` shells out to curl rather
+  than asking you to install a TLS-impersonation library.
+- **Five published fundamentals lines are deliberately not read**, each checked against Reliance's
+  audited accounts. The worst is EPS: the series reads 98.59, 51.45, 51.47, 59.69 for 2023-26
+  because the 2024 figure is a comparative restated after that October's bonus while 2023 is still
+  as filed. Every number is correct and the series is broken, so any growth rate across the join is
+  wrong by the bonus factor.
 - **A gap through a stop fills at the open, not at the stop.** The first version of the backtester
   filled every stop at its price, and every setup then reported a worst trade of exactly −5.29% —
   the stop plus costs, which cannot happen. Fixing it changed the worst breakout trade to −89.86%
