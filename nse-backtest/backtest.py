@@ -297,6 +297,10 @@ def main(argv=None) -> int:
 
         out = run(store, args.setup, args.hold, args.stop, args.target, args.window)
         s = summarise(out, args.setup, args.hold, args.stop, args.target)
+        # Kept so a screen can print this rule's record beside the stocks it finds. A screener that
+        # shows candidates without the rule's history invites acting on a rule nobody checked.
+        if s.get("trades"):
+            store.remember(s)
         if args.json:
             import json
             print(json.dumps({"summary": s, "trades": out["trades"]} if args.trades

@@ -59,6 +59,7 @@ on.
 | **nse-delivery** | real buying against intraday churn; spikes, accumulation, one stock's history | no |
 | **nse-news** | corporate announcements, India's 8-K, tagged by what they say | no |
 | **nse-insider** | PIT filings, bulk and block deals with the buyer named, institutional flow | no |
+| **nse-scan** | screens the market, with each rule's measured record beside its candidates | no |
 | **nse-backtest** | replays a setup over market history against what buying everything did | no |
 | **nse-risk** | position sizing with the full Indian cost stack; answers PASS or BLOCK | no |
 
@@ -67,6 +68,8 @@ More are in progress. Each one is added only once it has been run against live d
 ## How they fit together
 
 ```
+nse-scan      screens for setups, and says which rules have a record worth trusting
+     ↓
 nse-delivery  finds where real money moved
      ↓
 nse-insider   names who bought it, and drops the desks turning their book
@@ -130,6 +133,15 @@ and +95% outliers. That is a fragile shape, not an edge.
 
 **The backtester is included so you can disbelieve the other skills.** A pack that only ships
 screeners is a pack that cannot be checked.
+
+And the screener acts on it. `nse-scan` prints each rule's record above its candidates and
+disqualifies any rule that was never measured, lost to random, has under 100 trades, or whose median
+trade hit the stop. All four shipped setups currently fail at least one of those, and the screener
+says so in its own output:
+
+```
+None of these rules has a record worth acting on. A candidate list is not a reason to buy.
+```
 
 ## What these skills never do
 

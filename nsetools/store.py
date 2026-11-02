@@ -35,6 +35,23 @@ CREATE TABLE IF NOT EXISTS days (
     rows      INTEGER NOT NULL,
     note      TEXT
 );
+-- What a replay measured for a setup, so a screen can print the rule's record beside the stocks it
+-- found. A screener that shows candidates without the rule's history invites you to act on a rule
+-- nobody checked, which is the whole failure this pack is trying not to repeat.
+CREATE TABLE IF NOT EXISTS measured (
+    setup       TEXT NOT NULL,
+    hold_days   INTEGER NOT NULL,
+    stop_percent REAL NOT NULL,
+    trades      INTEGER NOT NULL,
+    win_rate    REAL,
+    average     REAL,
+    median      REAL,
+    baseline    REAL,
+    edge        REAL,
+    window      TEXT,
+    measured_on TEXT NOT NULL,
+    PRIMARY KEY (setup, hold_days, stop_percent)
+);
 """
 
 
@@ -89,6 +106,32 @@ class Prices:
         keys = ("traded_on", "open", "high", "low", "close", "previous_close", "volume",
                 "turnover_lacs", "delivery_percent")
         return [dict(zip(keys, row)) for row in cur]
+
+    def remember(self, summary: dict) -> None:
+        """Keep what a replay found, so a screen can show the rule's record beside its candidates."""
+        from datetime import datetime
+        self.db.execute(
+            "INSERT OR REPLACE INTO measured (setup, hold_days, stop_percent, trades, win_rate, "
+            "average, median, baseline, edge, window, measured_on) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (summary["setup"], summary.get("hold_days", 0), summary.get("stop_percent", 0.0),
+             summary.get("trades", 0), summary.get("win_rate"), summary.get("average_percent"),
+             summary.get("median_percent"), summary.get("baseline_average_percent"),
+             summary.get("edge_over_baseline"), summary.get("window"),
+             datetime.now().strftime("%Y-%m-%d %H:%M")))
+        self.db.commit()
+
+    def record_for(self, setup: str) -> dict | None:
+        """The most recently measured record for a setup, whatever the hold and stop."""
+        row = self.db.execute(
+            "SELECT setup, hold_days, stop_percent, trades, win_rate, average, median, baseline, "
+            "edge, window, measured_on FROM measured WHERE setup = ? "
+            "ORDER BY measured_on DESC LIMIT 1", (setup,)).fetchone()
+        if not row:
+            return None
+        keys = ("setup", "hold_days", "stop_percent", "trades", "win_rate", "average", "median",
+                "baseline", "edge", "window", "measured_on")
+        return dict(zip(keys, row))
 
     def counts(self) -> dict:
         days = self.db.execute("SELECT COUNT(*) FROM days WHERE rows > 0").fetchone()[0]
