@@ -1,122 +1,125 @@
 ---
 name: nse-results
 description: >-
-  Fundamentals. Four years of a company's accounts and the ratios its data source
-  publishes against the sector, with five misleading lines deliberately left out and
-  named. Checks each year against itself. Use when asked what a company earns, what
-  it is worth against its accounts, or whether its numbers hold together.
-argument-hint: "--symbol SYM [--basis consolidated|standalone] [--ratios]"
+  Fundamentals. Four years of a company's accounts and the ratios they imply, with
+  no key, token or account. Names the four field names that mean something other
+  than they say, and reports years whose figures cannot all be right. Use when asked
+  what a company earns, what it is worth against its accounts, its return on equity,
+  or whether its numbers hold together.
+argument-hint: "--symbol SYM [--ratios] [--cross-check] [--json]"
 ---
 
 # Fundamentals
 
-Four years of accounts per company, and the ratios the source publishes against its sector.
+Four years of accounts per company, and the ratios they imply.
 
-**This is the only skill in the pack that needs a token.** The exchange stopped publishing
-structured financial statements in December 2024 — its annual feed stops at 31 March 2024 and its
-quarterly feed at 31 December 2024, identically for every company measured, so that is a fact about
-the endpoint rather than about any filer. Everything else here works with no account at all.
-
-Get a token free at [upstox.com/developer](https://upstox.com/developer), then put it in
-`config.json` as `upstox_access_token` or set `UPSTOX_ACCESS_TOKEN`. Without one this skill says so
-and exits cleanly.
+**No key, no token, no account, no signup.** Indian symbols are reachable with a `.NS` suffix on a
+keyless endpoint, and it answers for small caps as readily as for Reliance.
 
 Scripts live in `${CLAUDE_SKILL_DIR}`.
 
 ## Commands
 
 ```bash
-python ${CLAUDE_SKILL_DIR}/results.py --symbol RELIANCE              # four years of accounts
-python ${CLAUDE_SKILL_DIR}/results.py --symbol RELIANCE --ratios     # published, against the sector
-python ${CLAUDE_SKILL_DIR}/results.py --symbol TCS --basis standalone
+python ${CLAUDE_SKILL_DIR}/results.py --symbol RELIANCE               # the accounts
+python ${CLAUDE_SKILL_DIR}/results.py --symbol TCS --ratios           # ROE, ROA, margins, debt
+python ${CLAUDE_SKILL_DIR}/results.py --symbol RELIANCE --cross-check # against a second source
+python ${CLAUDE_SKILL_DIR}/results.py --symbol TCS --save             # write nse/results.json
 ```
 
-Exit 0 on success, 2 if the source refused, **4 if there is no token** — so a caller can tell a
-missing token from a missing company.
+Exit 0 on success, 2 if the source has no accounts for the symbol — which is the right answer for a
+fund, a trust, or a very recent listing.
 
-## The five lines left out, and why
+## What it reads and writes
 
-Each was checked against Reliance's audited accounts. Every one would have produced a plausible
-wrong number rather than an obvious one, which is why they are named here instead of quietly mapped.
+| File | Direction | Who else uses it |
+|---|---|---|
+| `nse/results.json` | written with `--save` | `nse-scan` for context on a candidate |
+| nothing | read | this skill runs on its own |
 
-| Line | What it actually is |
+## The four field names that lie
+
+Each was measured against Reliance's audited accounts rather than read off documentation. These are
+the most useful thing in this skill, because every one of them produces a plausible wrong number.
+
+| Field | What it actually is |
 |---|---|
-| **Equity Capital** | total equity **including minority interest**, not the owners' share. Reliance 2026 reads 10,85,866 against an audited 9,04,030 — 20% out |
-| **Profit After Tax** | struck **before** the share of associates. 95,610 against 95,754 |
-| **Total Revenue** | built on revenue net of excise, so not the total income the accounts show |
-| **EPS - Basic / Diluted** | **mix two report vintages in one series.** Reliance 2023–26 reads 98.59, 51.45, 51.47, 59.69: the 2024 figure is the comparative restated after that October's bonus, while 2023 is still as filed. The series halves between them where nothing happened |
+| **NetIncome** | profit attributable to **owners**, not the whole group. Reliance 2026: 80,775 crore against a group profit of 95,754. Comparing it with another source's group profit manufactures a 15% disagreement that was never one |
+| **CashAndCashEquivalents** | sounds like the cash position and is only part of it. Out by 3.8% to 50.3% against the audited balance sheets 2023–26. **EndCashPosition** is exact all four years, so that is what this reads |
+| **BasicEPS** | **restated** for later bonuses and splits. Useful, and not what the company filed at the time — so against an as-filed figure the two sit exactly a bonus factor apart and one looks wrong |
+| **OrdinarySharesNumber** | **today's** share count, against every historical year. Reliance's 1:1 bonus went ex 2024-10-28; the field reports 1,353 crore shares for FY2023 and FY2024, which both closed before it, where the real count was 676.6 crore |
 
-That last one is the most dangerous, because every individual number is correct. Only the series is
-broken, and any growth rate across the join is wrong by the bonus factor.
+That last one is the worst. **Any per-share figure built from it for a year before the latest bonus
+is wrong by the bonus factor.** The skill prints these warnings under every table rather than
+hoping you read the docs.
 
-## What it does show
+## The ratios are computed, and labelled as computed
 
-| Column | Source |
+| Ratio | Built from |
 |---|---|
-| revenue, other income, profit before tax | income statement |
-| total assets | balance sheet |
-| cash, cash from operations | cash flow |
+| ROE | owners' profit over owners' equity |
+| ROA | group's profit over group's assets |
+| margin | owners' profit over revenue |
+| EBITDA margin | EBITDA over revenue |
+| debt / equity | total debt over owners' equity |
 
-All in crore, as reported. Nothing is derived, nothing is interpolated, and a missing figure stays
-missing rather than becoming a zero.
+**Both halves of a ratio come from the same side.** Mixing the group's profit with the owners'
+equity is the usual way these come out wrong, and it is easy to do because one field is called
+"net income".
 
-## It checks each year against itself
+## It reports years whose figures cannot all be right
 
-A statement that does not add up is wrong however plausible each line looks, and this is the only
-check available on a figure one source reports alone — which is most of them. It reports a year
-where profit before tax exceeds revenue plus other income, or where assets or revenue are negative,
-and says nothing should be computed from that year.
+Four years from one source means there is no cross-source disagreement available for anything.
+Arithmetic is what is left:
 
-## The data source is behind Cloudflare, and it refuses Python
+- equity above total assets — a company cannot owe its owners more than everything it has
+- profit before tax more than half again revenue — possible with large other income, flagged to read
+- negative assets or revenue
+- **a year reported in a currency other than rupees**, which is refused rather than converted. One
+  source reports Infosys in US dollars, and against a rupee share price that is wrong by about
+  eighty times with nothing in the numbers to show it
 
-`urllib` gets **403 with Cloudflare error 1010**, "access denied based on your browser's signature".
-That is a TLS fingerprint check, so no header satisfies it — setting a browser user-agent changes
-nothing, because the block is on how Python negotiates the connection rather than on what it claims
-to be.
+## `--cross-check` is the only thing a token buys
 
-The `curl` binary gets 200 on the same URL with the same token. So this skill shells out to curl,
-which ships with Windows 10 and later, macOS and every Linux. The alternative was asking everyone
-to install a TLS-impersonation library for one optional skill.
+Entirely optional, and nothing needs it. With a token configured, the accounts are compared against
+a second source and any figure more than 1% apart is reported. That matters because the two agree to
+the rupee on most figures, so a real gap means one of them is wrong and neither should be relied on.
 
-If curl is missing, the skill says exactly that and points out the rest of the pack still works.
+Without a token the skill says nothing is configured and carries on. That is the normal case.
 
 ## Data and limits
 
-- **Four years only.** The source is capped at four annual periods and no parameter changes it —
-  `limit`, `years` and a `from` date were all tried.
-- **Tokens expire daily**, around 3:30am India time. A 401 is reported as "replace the token"
-  rather than as a missing company.
-- **Rate limited at 2,000 requests per 30 minutes**, account-wide. The module keeps a rolling window
-  at 900, under half the published limit, and stops for ten minutes on any refusal. One company
-  costs three requests.
-- **Smaller listings often have nothing here.** That is reported as nothing reported, not as zero.
-- Consolidated by default. Standalone is a different set of accounts and they are never mixed.
+- **Four years, and that is a hard cap.** `period1` set to 2010, 2000 or 1970 returns the same four,
+  on RELIANCE, TCS, HDFCBANK and ITC alike.
+- **Consolidated figures.** No standalone option here.
+- **Accounts are history**, audited months after the fact.
+- The endpoint is unofficial, so it can change or rate-limit without notice.
 
 ## Steps
 
-1. `--symbol SYM` for the accounts. Read whether the years add up before anything else.
-2. `--ratios` for the source's own P/E, P/B, ROE, ROCE and EV/EBITDA against the sector.
-3. Where a published ratio disagrees with one you compute from these figures, **one of the figures
-   underneath is wrong** — that disagreement is the most useful signal here.
-4. `/nse-news SYM` for what the company has said since.
-5. `/nse-insider SYM` for whether anyone inside was buying.
-6. `/nse-risk` to size anything.
+1. `--symbol SYM` and read the contradictions section before the table.
+2. `--ratios` for ROE, ROA and margins.
+3. **Never build a per-share figure from the share count for a historical year.** Use `/nse-insider`
+   and the exchange's corporate actions to find the bonus, or use today only.
+4. `/nse-news SYM` for what has been said since the last accounts.
+5. `/nse-risk` to size anything.
 
 ## Rules
 
-- Never show a refused line, however much it is asked for.
-- Report a year that contradicts itself, and say not to compute from it.
-- Leave a missing figure missing.
-- Say which basis the numbers are on, every time.
+- Print the field warnings under every table, every time.
+- Leave a missing figure missing. Never a zero.
+- Refuse a non-rupee year rather than converting it.
+- Label a computed ratio as computed.
 
 ## What it never does
 
-- Never derives a ratio and presents it as reported.
-- Never mixes consolidated and standalone.
+- Never needs a key, a token or an account.
+- Never converts a currency.
 - Never fills a gap in a series.
+- Never builds a per-share figure from a historical share count without the warning.
 - Never places or sizes an order.
 
 ## Safety
 
-Accounts are history, audited months after the fact, and a company that earned money last year can
-lose it this year. Nothing here is financial advice.
+Accounts are history and audited late. A company that earned money last year can lose it this year.
+Nothing here is financial advice.

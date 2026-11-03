@@ -1,6 +1,6 @@
 {
   "name": "nse-trader-skills",
-  "description": "Claude skills for the Indian stock market (NSE): delivery analysis, corporate announcements, and position sizing with the full Indian cost stack. No pip installs, no account required.",
+  "description": "Claude skills for the Indian stock market (NSE): delivery analysis, corporate announcements, and position sizing with the full Indian cost stack. Free, MIT, no signup, no API key. No pip installs.",
   "version": "0.1.0",
   "author": { "name": "Niraj Bhandarwar" },
   "homepage": "https://github.com/NirajBhandarwar1/nse-trader-skills",

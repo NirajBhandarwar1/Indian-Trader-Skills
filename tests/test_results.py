@@ -1,15 +1,13 @@
-"""Fundamentals: the unit guard, the refused lines, and a year that contradicts itself."""
+"""Accounts with no key, and the four field names that mean something other than they say."""
 import importlib.util
-import json
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from nsetools import upstox                                        # noqa: E402
+from nsetools import yahoo                                        # noqa: E402
 
 CRORE = 1e7
 
@@ -24,151 +22,124 @@ def _load(folder: str, module: str):
 results = _load("nse-results", "results")
 
 
-def statement(lines, units="crore", period="Mar 2026"):
-    return {"status": "success", "data": {
-        "type": "consolidated", "units_in": units,
-        "full_statement": [{"particular": name, "history": [{"period": period, "value": v}]}
-                           for name, v in lines.items()]}}
+def year(**values):
+    return {"currency": values.pop("currency", "INR"),
+            "values": {k: v * CRORE for k, v in values.items()}}
 
 
-class Units(unittest.TestCase):
-    def test_crore_becomes_rupees(self):
-        """A crore kept as a crore is a figure ten million times too small."""
-        got = upstox.figures(statement({"Total Assets": 2178140}), upstox.BALANCE_SHEET, "X")
-        self.assertEqual(got["2026-03-31"]["assets"], 2178140 * CRORE)
+class NoCredentials(unittest.TestCase):
+    """The whole pack asks for nothing. This file is where that is pinned down."""
 
-    def test_an_unknown_unit_is_refused_not_converted(self):
-        """Guessing at an unknown unit is how a plausible wrong number gets in."""
-        with self.assertRaises(upstox.Refused):
-            upstox.figures(statement({"Total Assets": 2178140}, units="million"),
-                           upstox.BALANCE_SHEET, "X")
+    def test_the_accounts_module_takes_no_key_of_any_kind(self):
+        import inspect
+        args = inspect.signature(yahoo.accounts).parameters
+        for forbidden in ("token", "key", "api_key", "access", "secret"):
+            self.assertNotIn(forbidden, args)
 
-    def test_a_missing_unit_is_assumed_to_be_crore(self):
-        got = upstox.figures(statement({"Total Assets": 100}, units=""), upstox.BALANCE_SHEET, "X")
-        self.assertEqual(got["2026-03-31"]["assets"], 100 * CRORE)
+    def test_nothing_in_the_module_reads_an_environment_credential(self):
+        source = (ROOT / "nsetools" / "yahoo.py").read_text(encoding="utf-8")
+        self.assertNotIn("environ", source)
+        self.assertNotIn("getenv", source)
 
 
-class RefusedLines(unittest.TestCase):
-    """Five lines are deliberately not read. Each was checked against audited accounts."""
+class FieldNamesThatLie(unittest.TestCase):
+    """Four of them, each measured against audited accounts rather than read off the docs."""
 
-    def test_none_of_the_refused_lines_is_also_mapped(self):
-        mapped = (set(upstox.BALANCE_SHEET) | set(upstox.INCOME_STATEMENT)
-                  | set(upstox.CASH_FLOW))
-        for line in upstox.REFUSED_LINES:
-            self.assertNotIn(line, mapped, f"{line} is refused and mapped at the same time")
+    def test_net_income_is_the_owners_share_not_the_group(self):
+        """Reliance 2026: 80,775 crore to owners against a group profit of 95,754.
 
-    def test_equity_capital_is_ignored_even_when_present(self):
-        # 10,85,866 against an audited 9,04,030: it includes minority interest
-        got = upstox.figures(statement({"Equity Capital": 1085866}), upstox.BALANCE_SHEET, "X")
-        self.assertEqual(got, {})
-
-    def test_profit_after_tax_is_ignored(self):
-        # struck before the share of associates: 95,610 against 95,754
-        got = upstox.figures(statement({"Profit After Tax": 95610}),
-                            upstox.INCOME_STATEMENT, "X")
-        self.assertEqual(got, {})
-
-    def test_eps_is_ignored_because_the_series_mixes_vintages(self):
-        """Reliance 2023-26 reads 98.59, 51.45, 51.47, 59.69.
-
-        The 2024 figure is the comparative restated after that October's bonus; 2023 is still as
-        filed. Every number is correct and the series is broken, which is the dangerous shape.
+        Calling it "net income" and comparing it with another source's group profit manufactures a
+        15% disagreement that was never a disagreement.
         """
-        got = upstox.figures(statement({"EPS - Basic": 51.45, "EPS - Diluted": 51.45}),
-                            upstox.INCOME_STATEMENT, "X")
-        self.assertEqual(got, {})
+        self.assertEqual(yahoo.FIELDS["annualNetIncome"], "net_profit_owners")
+        self.assertEqual(yahoo.FIELDS["annualNetIncomeIncludingNoncontrollingInterests"],
+                         "net_profit")
 
-    def test_the_lines_that_are_read_still_come_through(self):
-        got = upstox.figures(
-            statement({"Revenue": 1057219, "Other Income": 28962, "Profit Before Tax": 123162,
-                       "Total Revenue": 1086181}), upstox.INCOME_STATEMENT, "X")
-        v = got["2026-03-31"]
-        self.assertEqual(v["revenue"], 1057219 * CRORE)
-        self.assertEqual(v["other_income"], 28962 * CRORE)
-        self.assertEqual(v["profit_before_tax"], 123162 * CRORE)
-        self.assertNotIn("total_revenue", v)
+    def test_the_cash_position_comes_from_the_right_field(self):
+        """annualCashAndCashEquivalents sounds right and is only part of the position.
+
+        Against Reliance's audited balance sheets 2023-26 the closing cash from the cash flow
+        statement is exact all four years; the field that sounds right is out by 3.8% to 50.3%.
+        """
+        self.assertEqual(yahoo.FIELDS["annualEndCashPosition"], "cash")
+        self.assertNotIn("annualCashAndCashEquivalents", yahoo.FIELDS)
+
+    def test_the_share_count_is_warned_about(self):
+        """The worst of the four: it is today's count against every historical year.
+
+        Reliance's 1:1 bonus went ex 2024-10-28, and this field reports 1,353 crore shares against
+        FY2023 and FY2024, which both closed before it, where the real count was 676.6 crore.
+        """
+        self.assertIn("shares", yahoo.WARNED)
+        self.assertIn("today", yahoo.WARNED["shares"])
+
+    def test_eps_is_warned_about_as_restated(self):
+        for key in ("eps_basic", "eps_diluted"):
+            self.assertIn(key, yahoo.WARNED)
+            self.assertIn("restated", yahoo.WARNED[key])
+
+    def test_every_warned_concept_is_actually_mapped(self):
+        mapped = set(yahoo.FIELDS.values())
+        for concept in yahoo.WARNED:
+            self.assertIn(concept, mapped)
 
 
-class Periods(unittest.TestCase):
-    def test_a_period_becomes_the_day_it_ends_on(self):
-        self.assertEqual(upstox.period_end("Mar 2026"), "2026-03-31")
-        self.assertEqual(upstox.period_end("Jun 2026"), "2026-06-30")
-        self.assertEqual(upstox.period_end("Dec 2025"), "2025-12-31")
+class Contradictions(unittest.TestCase):
+    """Four years from one source means no cross-source check. Arithmetic is what is left."""
 
-    def test_an_unreadable_period_becomes_nothing_not_a_guess(self):
-        self.assertIsNone(upstox.period_end("sometime"))
-        self.assertIsNone(upstox.period_end(""))
-        self.assertIsNone(upstox.period_end("FY26"))
+    def test_equity_above_assets_is_reported(self):
+        trouble = results.contradictions({"2026-03-31": year(assets=1000, equity=1200)})
+        self.assertTrue(any("cannot be" in t for t in trouble))
 
-
-class YearsThatContradictThemselves(unittest.TestCase):
-    """The only check available on a figure one source reports alone, which is most of them."""
-
-    def test_profit_above_total_income_is_reported(self):
-        trouble = results.adds_up({"2026-03-31": {
-            "revenue": 1000 * CRORE, "other_income": 50 * CRORE,
-            "profit_before_tax": 2000 * CRORE}})
-        self.assertTrue(trouble)
-        self.assertIn("exceeds revenue plus", trouble[0])
-
-    def test_an_ordinary_year_is_silent(self):
-        trouble = results.adds_up({"2026-03-31": {
-            "revenue": 1057219 * CRORE, "other_income": 28962 * CRORE,
-            "profit_before_tax": 123162 * CRORE, "assets": 2178140 * CRORE}})
+    def test_reliances_real_figures_raise_nothing(self):
+        trouble = results.contradictions({"2026-03-31": year(
+            revenue=1057219, profit_before_tax=123162, assets=2178140, equity=904030)})
         self.assertEqual(trouble, [])
 
+    def test_a_foreign_currency_is_refused_not_converted(self):
+        """One source reports Infosys in dollars; against a rupee price that is 80x wrong."""
+        trouble = results.contradictions({"2026-03-31": year(revenue=100, currency="USD")})
+        self.assertTrue(any("not rupees" in t for t in trouble))
+        self.assertTrue(any("not converted" in t for t in trouble))
+
     def test_negative_assets_are_reported(self):
-        trouble = results.adds_up({"2026-03-31": {"assets": -100 * CRORE}})
+        trouble = results.contradictions({"2026-03-31": year(assets=-50)})
         self.assertTrue(any("negative" in t for t in trouble))
 
     def test_a_year_missing_figures_is_not_judged(self):
-        """A gap is not a contradiction."""
-        self.assertEqual(results.adds_up({"2026-03-31": {"revenue": 100 * CRORE}}), [])
+        self.assertEqual(results.contradictions({"2026-03-31": year(revenue=100)}), [])
 
 
-class Tokens(unittest.TestCase):
-    def test_no_token_anywhere_raises_something_readable(self):
-        import os
-        kept = os.environ.pop("UPSTOX_ACCESS_TOKEN", None)
-        try:
-            with tempfile.TemporaryDirectory() as tmp:
-                here = Path.cwd()
-                os.chdir(tmp)
-                try:
-                    with self.assertRaises(upstox.NoToken) as caught:
-                        upstox.token()
-                    self.assertIn("upstox.com/developer", str(caught.exception))
-                finally:
-                    os.chdir(here)
-        finally:
-            if kept is not None:
-                os.environ["UPSTOX_ACCESS_TOKEN"] = kept
+class Ratios(unittest.TestCase):
+    def test_return_on_equity_uses_the_owners_figures_on_both_sides(self):
+        """Market value is a claim on the owners' share, so both halves must be theirs.
 
-    def test_an_explicit_token_wins(self):
-        self.assertEqual(upstox.token("abc123"), "abc123")
-
-    def test_a_config_file_is_read(self):
-        import os
-        with tempfile.TemporaryDirectory() as tmp:
-            (Path(tmp) / "config.json").write_text(json.dumps({"upstox_access_token": "from-file"}))
-            here = Path.cwd()
-            os.chdir(tmp)
-            try:
-                self.assertEqual(upstox.token(), "from-file")
-            finally:
-                os.chdir(here)
-
-
-class RateLimit(unittest.TestCase):
-    def test_the_budget_is_under_half_the_published_limit(self):
-        """Published is 2,000 per 30 minutes, and only that window binds.
-
-        A run paced to 210 a minute obeyed the per-second and per-minute limits and was still cut
-        off after 1,950 requests.
+        Mixing the group's profit with the owners' equity is the usual way these come out wrong.
         """
-        self.assertLess(upstox.WINDOW_BUDGET, 1000)
-        self.assertEqual(upstox.WINDOW_SECONDS, 30 * 60)
-        self.assertLessEqual(upstox.REQUESTS_PER_SECOND, 1.0)
+        rows = results.ratios({"2026-03-31": year(
+            net_profit_owners=80775, net_profit=95754, equity=904030, assets=2178140)})
+        self.assertAlmostEqual(rows[0]["roe_percent"], round(80775 / 904030 * 100, 1), places=1)
+
+    def test_return_on_assets_uses_the_groups_figures_on_both_sides(self):
+        rows = results.ratios({"2026-03-31": year(
+            net_profit_owners=80775, net_profit=95754, equity=904030, assets=2178140)})
+        self.assertAlmostEqual(rows[0]["roa_percent"], round(95754 / 2178140 * 100, 1), places=1)
+
+    def test_a_missing_figure_gives_no_ratio_rather_than_a_zero(self):
+        rows = results.ratios({"2026-03-31": year(revenue=1000)})
+        self.assertIsNone(rows[0]["roe_percent"])
+        self.assertIsNone(rows[0]["debt_to_equity"])
+
+    def test_zero_equity_does_not_divide(self):
+        rows = results.ratios({"2026-03-31": year(net_profit_owners=100, equity=0)})
+        self.assertIsNone(rows[0]["roe_percent"])
+
+
+class FourYears(unittest.TestCase):
+    def test_the_cap_is_documented_as_a_cap(self):
+        """period1 set to 2010, 2000 or 1970 all return the same four years."""
+        source = (ROOT / "nsetools" / "yahoo.py").read_text(encoding="utf-8")
+        self.assertIn("hard cap", source)
 
 
 if __name__ == "__main__":
