@@ -61,8 +61,14 @@ class Prices:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
         self.db = sqlite3.connect(path)
-        self.db.executescript(SCHEMA)
-        self.db.commit()
+        try:
+            self.db.executescript(SCHEMA)
+            self.db.commit()
+        except sqlite3.DatabaseError:
+            # A file that is not a cache: let go of it before saying so, or Windows keeps it
+            # locked for the life of the process.
+            self.db.close()
+            raise
 
     # ---- writing ------------------------------------------------------------------------------
 
