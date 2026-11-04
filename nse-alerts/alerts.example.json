@@ -1,0 +1,39 @@
+{
+  "rules": [
+    {
+      "id": "sbin-plan-stop",
+      "symbol": "SBIN",
+      "type": "stop",
+      "price": 950.05,
+      "note": "plan stop: opening-range low Rs 950.05: wider, so fewer shares for the same loss",
+      "date": "2026-10-22"
+    },
+    {
+      "id": "sbin-plan-target",
+      "symbol": "SBIN",
+      "type": "target",
+      "price": 985.45,
+      "note": "plan target: 2R (2 times the risk)",
+      "date": "2026-10-22"
+    },
+    {
+      "id": "sbin-flat-by",
+      "symbol": "SBIN",
+      "type": "time",
+      "at": "15:20",
+      "label": "flat by close",
+      "date": "2026-10-22"
+    },
+    {
+      "id": "opening-bell",
+      "type": "opening_bell"
+    },
+    {
+      "id": "itc-pct_move-3",
+      "symbol": "ITC",
+      "type": "pct_move",
+      "pct": 3.0,
+      "direction": "up"
+    }
+  ]
+}
