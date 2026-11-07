@@ -1,0 +1,12 @@
+{
+  "_comment": "A long-term split, for --targets. Weights need not add to 100: they are renormalised. Anything over max_position_pct is pinned at the cap and its excess shared out. Use a SEPARATE config file for this, because these are plain buys with no stop.",
+
+  "weights": {
+    "RELIANCE": 25,
+    "TCS": 20,
+    "HDFCBANK": 20,
+    "ITC": 15,
+    "SBIN": 12,
+    "SUNPHARMA": 8
+  }
+}
