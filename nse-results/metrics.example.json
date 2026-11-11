@@ -1,0 +1,107 @@
+{
+  "as_of": "2026-10-24",
+  "currency": "INR",
+  "companies": [
+    {
+      "symbol": "HDFCBANK",
+      "name": "HDFC Bank Limited",
+      "basis": "consolidated",
+      "period_end": "2026-09-30",
+      "fiscal": "Q2 FY27",
+      "revenue_ttm": 5063162600000.0,
+      "profit_owners_ttm": 801021300000.0,
+      "eps_ttm": 51.88,
+      "revenue_growth_yoy": 9.1,
+      "profit_growth_yoy": 5.6,
+      "eps_growth_yoy": 5.5,
+      "gross_margin": null,
+      "operating_margin": 25.4,
+      "net_margin": 16.0,
+      "notes": [
+        "the quarter a year earlier (2025-09-30) had exceptional items of Rs -753.1 cr in its profit before tax"
+      ],
+      "ttm_notes": [],
+      "source": "NSE results filings (XBRL), as filed by the company"
+    },
+    {
+      "symbol": "ITC",
+      "name": "ITC Limited",
+      "basis": "consolidated",
+      "period_end": "2026-06-30",
+      "fiscal": "Q1 FY27",
+      "revenue_ttm": 963072800000.0,
+      "profit_owners_ttm": 198394000000.0,
+      "eps_ttm": 15.84,
+      "revenue_growth_yoy": 27.6,
+      "profit_growth_yoy": -16.2,
+      "eps_growth_yoy": -16.0,
+      "gross_margin": 69.9,
+      "operating_margin": 16.1,
+      "net_margin": 14.9,
+      "notes": [],
+      "ttm_notes": [],
+      "source": "NSE results filings (XBRL), as filed by the company"
+    },
+    {
+      "symbol": "RELIANCE",
+      "name": "Reliance Industries Limited",
+      "basis": "consolidated",
+      "period_end": "2026-06-30",
+      "fiscal": "Q1 FY27",
+      "revenue_ttm": 11388650000000.0,
+      "profit_owners_ttm": 747270000000.0,
+      "eps_ttm": 55.22,
+      "revenue_growth_yoy": 25.4,
+      "profit_growth_yoy": -22.4,
+      "eps_growth_yoy": -22.4,
+      "gross_margin": 32.2,
+      "operating_margin": 10.4,
+      "net_margin": 6.7,
+      "notes": [
+        "other income a year earlier (2025-06-30) was Rs 15,119 cr, against Rs 6,550 cr this quarter: the growth figures compare with that base"
+      ],
+      "ttm_notes": [],
+      "source": "NSE results filings (XBRL), as filed by the company"
+    },
+    {
+      "symbol": "SBIN",
+      "name": "State Bank of India",
+      "basis": "consolidated",
+      "period_end": "2026-06-30",
+      "fiscal": "Q1 FY27",
+      "revenue_ttm": 7226870000000.0,
+      "profit_owners_ttm": 862103100000.0,
+      "eps_ttm": 93.3,
+      "revenue_growth_yoy": 7.8,
+      "profit_growth_yoy": 13.7,
+      "eps_growth_yoy": 9.9,
+      "gross_margin": null,
+      "operating_margin": 21.5,
+      "net_margin": 13.4,
+      "notes": [],
+      "ttm_notes": [],
+      "source": "NSE results filings (XBRL), as filed by the company"
+    },
+    {
+      "symbol": "TCS",
+      "name": "Tata Consultancy Services Limited",
+      "basis": "consolidated",
+      "period_end": "2026-09-30",
+      "fiscal": "Q2 FY27",
+      "revenue_ttm": 2832480000000.0,
+      "profit_owners_ttm": 516080000000.0,
+      "eps_ttm": 142.64,
+      "revenue_growth_yoy": 11.2,
+      "profit_growth_yoy": 15.0,
+      "eps_growth_yoy": 15.0,
+      "gross_margin": null,
+      "operating_margin": 24.0,
+      "net_margin": 19.0,
+      "notes": [
+        "the quarter a year earlier (2025-09-30) had exceptional items of Rs -1,135 cr in its profit before tax"
+      ],
+      "ttm_notes": [],
+      "source": "NSE results filings (XBRL), as filed by the company"
+    }
+  ]
+}
