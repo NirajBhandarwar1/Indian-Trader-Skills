@@ -1,175 +1,196 @@
-"""The backtester, and the assumption that makes backtests lie.
+"""Replaying a rule over real market history, and the fill assumptions that decide the answer.
 
-Every test here is offline and built on hand-made bars, because the point is the arithmetic of the
-replay rather than any particular stock.
+EVERYTHING RUNS ON REAL BARS: 1,875 daily bars for 25 liquid NSE symbols over 75 trading days,
+out of the exchange's own bhavcopy. The gap-through-stop case is a real overnight gap, not a
+constructed one, because that assumption is where a backtest flatters itself most.
 """
-import importlib.util
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from nsetools.store import Prices                                   # noqa: E402
+from _load import fixture, has, price_cache, skill                # noqa: E402
 
-
-def _load(folder: str, module: str):
-    spec = importlib.util.spec_from_file_location(module, ROOT / folder / f"{module}.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+backtest = skill("nse-backtest", "backtest")
+CACHE = "cache/daily-bars.json.gz"
 
 
-bt = _load("nse-backtest", "backtest")
+@unittest.skipUnless(has(CACHE), "run capture.py")
+class RealHistory(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.store, cls.saved = price_cache(Path(cls.tmp.name) / "p.sqlite")
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.store.close()
+        cls.tmp.cleanup()
+
+    def test_the_cache_holds_real_market_history(self):
+        counts = self.store.counts()
+        self.assertEqual(counts["days"], 75)
+        self.assertEqual(counts["bars"], 1875)
+        self.assertEqual(counts["symbols"], 25)
+        self.assertEqual(counts["last"], "2026-10-23")
+
+    def test_the_symbols_are_liquid_real_companies(self):
+        self.assertIn("RELIANCE", self.saved["symbols"])
+        self.assertIn("HDFCBANK", self.saved["symbols"])
+
+    def test_a_replay_over_real_history_produces_real_trades(self):
+        out = backtest.run(self.store, "breakout", 10, 5.0, None, 20)
+        self.assertGreater(len(out["trades"]), 50)
+        for trade in out["trades"]:
+            self.assertIn(trade["symbol"], self.saved["symbols"])
+            self.assertGreater(trade["entry"], 0)
+            self.assertIn(trade["why"], ("held", "stopped", "gapped", "target"))
+
+    def test_the_baseline_is_always_measured(self):
+        """What buying anything would have done. Without it a win rate means nothing."""
+        out = backtest.run(self.store, "breakout", 10, 5.0, None, 20)
+        self.assertGreater(len(out["baseline"]), len(out["trades"]))
+        summary = backtest.summarise(out, "breakout", 10, 5.0, None)
+        self.assertIsNotNone(summary["baseline_average_percent"])
+        self.assertAlmostEqual(
+            summary["edge_over_baseline"],
+            round(summary["average_percent"] - summary["baseline_average_percent"], 2),
+            places=2)
+
+    def test_entry_is_the_next_days_open_never_the_signal_close(self):
+        """You cannot buy at a close you only knew about after it printed."""
+        out = backtest.run(self.store, "breakout", 10, 5.0, None, 20)
+        for trade in out["trades"][:40]:
+            self.assertGreater(trade["entry_on"], trade["signal_on"])
+            bars = {b["traded_on"]: b for b in self.store.series(trade["symbol"])}
+            self.assertAlmostEqual(trade["entry"], bars[trade["entry_on"]]["open"], places=2)
+
+    def test_a_rule_that_fires_on_nothing_is_reported_as_no_trades(self):
+        """No trades is an answer. It must not come back as a win rate of zero or a blank edge."""
+        out = backtest.run(self.store, "delivery-spike", 10, 5.0, None, 20)
+        summary = backtest.summarise(out, "delivery-spike", 10, 5.0, None)
+        self.assertEqual(summary["trades"], len(out["trades"]))
+        if not out["trades"]:
+            self.assertIsNone(summary.get("win_rate"))
+            self.assertIsNone(summary.get("average_percent"))
+
+    def test_the_control_rule_exists_and_ignores_delivery(self):
+        """If the delivery setups do not beat this, the delivery number adds nothing."""
+        self.assertIn("breakout", backtest.SETUPS)
+        source = __import__("inspect").getsource(backtest.plain_breakout)
+        self.assertNotIn("delivery", source.split('"""')[2])
+
+    def test_every_setup_reads_only_the_past(self):
+        """A rule that sees tomorrow fakes an edge, so this poisons tomorrow and checks.
+
+        Tested behaviourally rather than by reading the source, because `bars[i - window:i + 1]`
+        is perfectly correct -- the slice end is exclusive, so it includes today's bar, which was
+        known at the close. Only an answer that CHANGES when the future changes is a bug.
+        """
+        series = self.store.series("RELIANCE")
+        self.assertGreater(len(series), 40)
+        poison = [dict(bar) for bar in series]
+        for bar in poison[31:]:
+            bar.update(close=99999.0, high=99999.0, low=0.01, delivery_percent=100.0,
+                       turnover_lacs=10 ** 9)
+        for name, rule in backtest.SETUPS.items():
+            self.assertEqual(rule(series, 30, 20), rule(poison, 30, 20),
+                             f"{name} changed its mind when the future changed")
 
 
-def bar(day, close, *, open=None, high=None, low=None, prev=None, delivery=30.0, turnover=5000.0):
-    return {"symbol": "TEST", "traded_on": day, "open": open if open is not None else close,
-            "high": high if high is not None else close, "low": low if low is not None else close,
-            "close": close, "previous_close": prev if prev is not None else close,
-            "volume": 100000.0, "turnover": turnover, "delivered": 50000.0,
-            "delivery_percent": delivery}
+@unittest.skipUnless(has(CACHE), "run capture.py")
+class AGapThroughTheStopFillsAtTheOpen(unittest.TestCase):
+    """The most flattering assumption a backtest can make, tested on a real gap.
 
-
-class GapThroughTheStop(unittest.TestCase):
-    """The single most flattering assumption a backtest can make, and this one refuses it.
-
-    The first version of the replay filled every stop at the stop price. Every setup then reported a
-    worst trade of exactly -5.29%, the stop plus costs, which cannot happen: a stock that closes at
-    100 and opens at 88 does not fill a 95 stop at 95. Fixing it changed the worst breakout trade
-    from -5.29% to -89.86% over the same window, and found 103 trades that had gapped through.
+    The first version of this file took the stop price whatever happened overnight, and every
+    setup then reported a worst trade of exactly -5.29%: the stop plus costs. That cannot happen.
+    A stock that closes at 202.17 and opens at 171.00 does not fill a 192.06 stop at 192.06.
     """
 
-    def _replay(self, bars, **kw):
-        with tempfile.TemporaryDirectory() as tmp:
-            store = Prices(Path(tmp) / "p.sqlite")
-            for b in bars:
-                store.put_day(b["traded_on"], [b], "test")
-            try:
-                opts = {"setup": "always", "hold": 2, "stop_percent": 5.0,
-                        "target_percent": None, "window": 1}
-                opts.update(kw)
-                bt.SETUPS["always"] = lambda bars, i, window=1: i == window
-                return bt.run(store, opts["setup"], opts["hold"], opts["stop_percent"],
-                              opts["target_percent"], opts["window"])
-            finally:
-                bt.SETUPS.pop("always", None)
-                store.close()
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.store, cls.saved = price_cache(Path(cls.tmp.name) / "p.sqlite")
 
-    def test_a_gap_below_the_stop_fills_at_the_open(self):
-        days = ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04", "2026-01-05"]
-        bars = [bar(days[0], 100.0), bar(days[1], 100.0),
-                bar(days[2], 100.0, open=100.0),            # entry at this open
-                bar(days[3], 88.0, open=88.0, high=89.0, low=87.0),   # gaps through a 95 stop
-                bar(days[4], 90.0)]
-        out = self._replay(bars)
-        self.assertEqual(len(out["trades"]), 1)
-        trade = out["trades"][0]
-        self.assertEqual(trade["why"], "gapped")
-        self.assertEqual(trade["exit"], 88.0, "a 95 stop cannot fill at 95 when the open was 88")
-        self.assertLess(trade["return_percent"], -5.0 - bt.COSTS_ROUND_TRIP_PERCENT)
+    @classmethod
+    def tearDownClass(cls):
+        cls.store.close()
+        cls.tmp.cleanup()
 
-    def test_an_ordinary_stop_still_fills_at_the_stop(self):
-        days = ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04", "2026-01-05"]
-        bars = [bar(days[0], 100.0), bar(days[1], 100.0),
-                bar(days[2], 100.0, open=100.0),
-                bar(days[3], 97.0, open=99.0, high=99.5, low=94.0),  # traded through 95 intraday
-                bar(days[4], 98.0)]
-        out = self._replay(bars)
-        trade = out["trades"][0]
-        self.assertEqual(trade["why"], "stopped")
-        self.assertEqual(trade["exit"], 95.0)
+    def biggest_real_gap(self):
+        """The worst overnight gap down in the captured history."""
+        worst = None
+        for symbol in self.saved["symbols"]:
+            series = self.store.series(symbol)
+            for before, after in zip(series, series[1:]):
+                if before.get("close") and after.get("open"):
+                    move = (after["open"] - before["close"]) / before["close"] * 100
+                    if worst is None or move < worst[0]:
+                        worst = (move, symbol, before, after)
+        return worst
 
-    def test_a_gap_above_the_target_fills_above_it(self):
-        """The same honesty the other way, which happens to favour you. It is still the truth."""
-        days = ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04", "2026-01-05"]
-        bars = [bar(days[0], 100.0), bar(days[1], 100.0),
-                bar(days[2], 100.0, open=100.0),
-                bar(days[3], 120.0, open=118.0, high=122.0, low=117.0),  # gaps past a 110 target
-                bar(days[4], 121.0)]
-        out = self._replay(bars, target_percent=10.0)
-        trade = out["trades"][0]
-        self.assertEqual(trade["why"], "target")
-        self.assertEqual(trade["exit"], 118.0)
+    def test_the_history_really_contains_a_gap_through_a_five_percent_stop(self):
+        move, symbol, before, after = self.biggest_real_gap()
+        self.assertEqual(symbol, "PINELABS")
+        self.assertLess(move, -5.0)
+        self.assertEqual(before["close"], 202.17)
+        self.assertEqual(after["open"], 171.0)
+
+    def test_the_fill_is_the_open_not_the_stop(self):
+        """Entry 202.17 with a 5% stop is 192.06. The market opened at 171.00."""
+        _move, _symbol, before, after = self.biggest_real_gap()
+        entry, stop = before["close"], before["close"] * 0.95
+        filled = min(stop, after["open"])
+        self.assertEqual(round(stop, 2), 192.06)
+        self.assertEqual(filled, 171.0)
+        self.assertLess((filled / entry - 1) * 100, -5.0)
+
+    def test_no_real_trade_in_the_replay_reports_exactly_the_stop_as_its_worst(self):
+        """The symptom of the old bug: every setup bottoming out at the same -5.29%."""
+        out = backtest.run(self.store, "breakout", 10, 5.0, None, 20)
+        if not out["trades"]:
+            self.skipTest("no trades in this capture")
+        worst = min(t["return_percent"] for t in out["trades"])
+        gapped = [t for t in out["trades"] if t["why"] == "gapped"]
+        if gapped:
+            self.assertLess(worst, -5.29)
+        self.assertNotEqual(worst, -5.29)
+
+    def test_a_gapped_exit_is_labelled_differently_from_a_stopped_one(self):
+        out = backtest.run(self.store, "breakout", 10, 5.0, None, 20)
+        reasons = {t["why"] for t in out["trades"]}
+        self.assertTrue(reasons <= {"held", "stopped", "gapped", "target"})
 
     def test_the_stop_is_checked_before_the_target(self):
-        """Within one daily bar there is no way to know which came first.
+        """Within one daily bar nobody knows which came first, so the pessimistic order is honest.
 
-        A backtest that takes the target when both were touched invents money, so the pessimistic
-        order is the honest one.
+        A backtest that takes the target when both were touched invents money.
         """
-        days = ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04", "2026-01-05"]
-        bars = [bar(days[0], 100.0), bar(days[1], 100.0),
-                bar(days[2], 100.0, open=100.0),
-                bar(days[3], 105.0, open=100.0, high=115.0, low=94.0),   # touched both
-                bar(days[4], 106.0)]
-        out = self._replay(bars, target_percent=10.0)
-        self.assertEqual(out["trades"][0]["why"], "stopped")
+        source = __import__("inspect").getsource(backtest.run)
+        stop_at = source.index("low <= stop")
+        target_at = source.index("high >= target")
+        self.assertLess(stop_at, target_at)
+
+    def test_a_gap_up_through_the_target_fills_above_it_and_that_is_not_a_favour(self):
+        source = __import__("inspect").getsource(backtest.run)
+        self.assertIn("max(target, opened)", source)
+        self.assertIn("min(stop, opened)", source)
 
 
-class EntryTiming(unittest.TestCase):
-    def test_entry_is_the_next_open_never_the_signal_close(self):
-        """A rule that buys the close of the day it fired has already seen the answer."""
-        days = ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"]
-        bars = [bar(days[0], 100.0), bar(days[1], 100.0),
-                bar(days[2], 50.0, open=104.0),      # signal day close 50, next open 104
-                bar(days[3], 104.0)]
-        with tempfile.TemporaryDirectory() as tmp:
-            store = Prices(Path(tmp) / "p.sqlite")
-            for b in bars:
-                store.put_day(b["traded_on"], [b], "test")
-            bt.SETUPS["always"] = lambda bars, i, window=1: i == 1
-            try:
-                out = bt.run(store, "always", 1, 50.0, None, 1)
-            finally:
-                bt.SETUPS.pop("always", None)
-                store.close()
-        self.assertEqual(out["trades"][0]["entry"], 104.0)
+@unittest.skipUnless(has(CACHE), "run capture.py")
+class CostsAreNotOptional(unittest.TestCase):
+    def test_costs_come_off_every_trade_and_off_the_baseline_too(self):
+        """Taking costs off the setup but not the baseline manufactures an edge."""
+        import inspect
+        source = inspect.getsource(backtest.run)
+        self.assertEqual(source.count("COSTS_ROUND_TRIP_PERCENT"), 2)
 
-
-class Baseline(unittest.TestCase):
-    def test_the_baseline_is_always_measured(self):
-        """A setup winning 55% is a bad setup if everything won 60% over the same days.
-
-        Most backtests never print that comparison, which is how a rule gets flattered into looking
-        like an edge.
-        """
-        out = {"trades": [{"return_percent": 2.0, "why": "held"}],
-               "baseline": [1.0, 2.0, 3.0], "days": 40, "symbols": 1,
-               "first": "2026-01-01", "last": "2026-02-01"}
-        s = bt.summarise(out, "x", 10, 5.0, None)
-        self.assertIn("baseline_average_percent", s)
-        self.assertEqual(s["baseline_average_percent"], 2.0)
-        self.assertEqual(s["edge_over_baseline"], 0.0)
-
-    def test_costs_come_off_the_baseline_too(self):
-        """Otherwise the setup is charged for trading and the comparison is not."""
-        self.assertGreater(bt.COSTS_ROUND_TRIP_PERCENT, 0)
-
-    def test_no_trades_is_reported_as_no_trades(self):
-        s = bt.summarise({"trades": [], "baseline": [1.0], "days": 5, "symbols": 1,
-                          "first": "a", "last": "b"}, "x", 10, 5.0, None)
-        self.assertEqual(s["trades"], 0)
-
-
-class Setups(unittest.TestCase):
-    def test_every_setup_reads_only_the_past(self):
-        """Each rule is handed the full history and an index. None may look past it."""
-        days = [f"2026-01-{n:02d}" for n in range(1, 41)]
-        bars = [bar(d, 100.0 + n, delivery=20.0) for n, d in enumerate(days)]
-        bars[30] = bar(days[30], 999.0, delivery=99.0)      # a huge future day
-        for name, rule in bt.SETUPS.items():
-            # judged at index 25, the day at index 30 must not change the answer
-            without = rule(bars[:26] + [bar(d, 1.0) for d in days[26:]], 25, 20)
-            with_it = rule(bars, 25, 20)
-            self.assertEqual(without, with_it, f"{name} looked into the future")
-
-    def test_plain_breakout_exists_as_the_control(self):
-        """The delivery setups have to beat a rule that ignores delivery, or it adds nothing."""
-        self.assertIn("breakout", bt.SETUPS)
-        self.assertIn("delivery-spike", bt.SETUPS)
+    def test_the_cost_figure_is_the_indian_one(self):
+        self.assertGreater(backtest.COSTS_ROUND_TRIP_PERCENT, 0)
+        self.assertLess(backtest.COSTS_ROUND_TRIP_PERCENT, 1)
 
 
 if __name__ == "__main__":

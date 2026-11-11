@@ -16,9 +16,13 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# This skill's own copy of the shared code, so the folder works when installed on its own.
+# It is written by tools/vendor.py from the one source in nsetools/ and checked byte for
+# byte by the tests. Never the parent folder: installed alone, that is a folder of OTHER
+# skills, and reaching into it is how a skill works here and breaks everywhere else.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from nsetools import nse                                      # noqa: E402
+from nsetools import nse, show                                # noqa: E402,F401
 from nsetools.http import NotPublished                         # noqa: E402
 
 # An illiquid stock that traded four hundred shares all day shows 100% delivery, because the one
@@ -186,7 +190,7 @@ def accumulation(top: int, window: int) -> list[dict]:
     return found[:top]
 
 
-def show(rows: list[dict], columns: list[tuple[str, str, int]]) -> None:
+def print_rows(rows: list[dict], columns: list[tuple[str, str, int]]) -> None:
     if not rows:
         print("Nothing matched.")
         return
@@ -205,7 +209,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--spikes", action="store_true", help="delivery far above the stock's own norm")
-    ap.add_argument("--high", type=float, metavar="PCT", help="stocks closing above PCT delivery")
+    ap.add_argument("--high", type=show.number, metavar="PCT", help="stocks closing above PCT delivery")
     ap.add_argument("--accumulation", action="store_true",
                     help="price flat while delivery climbs")
     ap.add_argument("--symbol", help="one stock's delivery history")
@@ -226,7 +230,7 @@ def main(argv=None) -> int:
                 print(json.dumps(out, indent=2))
             else:
                 print(f"{args.symbol.upper()}, last {len(out)} published days\n")
-                show(out, [("date", "date", 12), ("close", "close", 10),
+                print_rows(out, [("date", "date", 12), ("close", "close", 10),
                            ("delivery_percent", "delivery%", 10), ("reading", "reading", 34)])
                 got = [r["delivery_percent"] for r in out if r["delivery_percent"] is not None]
                 if got:
@@ -239,7 +243,7 @@ def main(argv=None) -> int:
                 print(json.dumps(rows, indent=2))
             else:
                 print(f"Delivery today against each stock's own {args.days}-day median\n")
-                show(rows, [("symbol", "symbol", 12), ("delivery_percent", "today%", 8),
+                print_rows(rows, [("symbol", "symbol", 12), ("delivery_percent", "today%", 8),
                             ("normal_percent", "usual%", 8), ("times_normal", "x usual", 8),
                             ("change_percent", "price%", 8), ("turnover_lacs", "turnover", 11),
                             ("reading", "reading", 30)])
@@ -252,7 +256,7 @@ def main(argv=None) -> int:
                 print(json.dumps(rows, indent=2))
             else:
                 print(f"Stocks closing above {args.high:.0f}% delivery, busiest first\n")
-                show(rows, [("symbol", "symbol", 12), ("delivery_percent", "delivery%", 10),
+                print_rows(rows, [("symbol", "symbol", 12), ("delivery_percent", "delivery%", 10),
                             ("close", "close", 10), ("change_percent", "price%", 8),
                             ("turnover_lacs", "turnover", 11), ("reading", "reading", 30)])
             return 0
@@ -263,7 +267,7 @@ def main(argv=None) -> int:
                 print(json.dumps(rows, indent=2))
             else:
                 print(f"Price flat, delivery climbing, over {args.days} days\n")
-                show(rows, [("symbol", "symbol", 12), ("delivery_was", "was%", 7),
+                print_rows(rows, [("symbol", "symbol", 12), ("delivery_was", "was%", 7),
                             ("delivery_now", "now%", 7), ("delivery_up_percent", "up%", 7),
                             ("price_moved_percent", "price%", 8), ("close", "close", 10),
                             ("turnover_lacs", "turnover", 11)])
@@ -280,4 +284,4 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    show.run(main)

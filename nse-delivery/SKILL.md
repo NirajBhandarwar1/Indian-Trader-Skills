@@ -24,10 +24,10 @@ Scripts live in `${CLAUDE_SKILL_DIR}`.
 ## Commands
 
 ```bash
-python ${CLAUDE_SKILL_DIR}/delivery.py --spikes              # delivery vs each stock's own 20-day median
-python ${CLAUDE_SKILL_DIR}/delivery.py --high 60             # companies closing above 60% delivery
-python ${CLAUDE_SKILL_DIR}/delivery.py --accumulation        # price flat, delivery climbing
-python ${CLAUDE_SKILL_DIR}/delivery.py --symbol RELIANCE     # one stock, day by day
+python "${CLAUDE_SKILL_DIR}/delivery.py" --spikes              # delivery vs each stock's own 20-day median
+python "${CLAUDE_SKILL_DIR}/delivery.py" --high 60             # companies closing above 60% delivery
+python "${CLAUDE_SKILL_DIR}/delivery.py" --accumulation        # price flat, delivery climbing
+python "${CLAUDE_SKILL_DIR}/delivery.py" --symbol RELIANCE     # one stock, day by day
 ```
 
 `--days N` sets the comparison window (default 20), `--top N` the row count (default 25), `--json`

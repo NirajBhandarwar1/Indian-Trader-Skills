@@ -19,88 +19,22 @@ import sys
 from datetime import date
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# This skill's own copy of the shared code, so the folder works when installed on its own.
+# It is written by tools/vendor.py from the one source in nsetools/ and checked byte for
+# byte by the tests. Never the parent folder: installed alone, that is a folder of OTHER
+# skills, and reaching into it is how a skill works here and breaks everywhere else.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from nsetools import nse, show                                  # noqa: E402
 from nsetools.http import NotPublished                           # noqa: E402
 from nsetools.store import Prices, missing_days                  # noqa: E402
 
-MIN_TURNOVER_LACS = 100.0        # below this a stock is not tradeable; see nse-delivery
-COSTS_ROUND_TRIP_PERCENT = 0.293  # brokerage, STT both sides, exchange, GST, SEBI, stamp. See nse-risk.
-
-
-# ---- the setups ---------------------------------------------------------------------------------
-# A setup is a function that, given a stock's history and a position in it, says whether to buy at
-# the next open. Each one reads only the past, which is the whole discipline: a rule that uses the
-# day's close to decide to buy the day's close has already seen the answer.
-
-def delivery_spike(bars: list[dict], i: int, window: int = 20) -> bool:
-    """Delivery today is at least twice the stock's own median, on a rising close."""
-    if i < window:
-        return False
-    past = [b["delivery_percent"] for b in bars[i - window:i]
-            if b.get("delivery_percent") is not None]
-    today = bars[i].get("delivery_percent")
-    if today is None or len(past) < window // 2:
-        return False
-    normal = statistics.median(past)
-    close, prev = bars[i].get("close"), bars[i].get("previous_close")
-    if not normal or not close or not prev:
-        return False
-    return today >= normal * 2 and close > prev
-
-
-def delivery_and_breakout(bars: list[dict], i: int, window: int = 20) -> bool:
-    """Delivery above its median AND the close above the highest close of the window."""
-    if i < window:
-        return False
-    past = bars[i - window:i]
-    highs = [b["close"] for b in past if b.get("close")]
-    deliv = [b["delivery_percent"] for b in past if b.get("delivery_percent") is not None]
-    today, close = bars[i].get("delivery_percent"), bars[i].get("close")
-    if not highs or not deliv or today is None or not close:
-        return False
-    return close > max(highs) and today > statistics.median(deliv)
-
-
-def quiet_accumulation(bars: list[dict], i: int, window: int = 20) -> bool:
-    """Delivery rising over the window while the price went nowhere."""
-    if i < window:
-        return False
-    past = bars[i - window:i + 1]
-    half = len(past) // 2
-    early_d = [b["delivery_percent"] for b in past[:half] if b.get("delivery_percent") is not None]
-    late_d = [b["delivery_percent"] for b in past[half:] if b.get("delivery_percent") is not None]
-    early_c = [b["close"] for b in past[:half] if b.get("close")]
-    late_c = [b["close"] for b in past[half:] if b.get("close")]
-    if not (early_d and late_d and early_c and late_c):
-        return False
-    d0, d1 = statistics.median(early_d), statistics.median(late_d)
-    c0, c1 = statistics.median(early_c), statistics.median(late_c)
-    if d0 <= 0 or c0 <= 0:
-        return False
-    return (d1 / d0 - 1) > 0.25 and abs(c1 / c0 - 1) < 0.05
-
-
-def plain_breakout(bars: list[dict], i: int, window: int = 20) -> bool:
-    """The close above the window's highest close. No delivery involved: the control case.
-
-    Here so the delivery setups can be compared against a rule that ignores delivery entirely. If
-    they do not beat this, the delivery number is not adding anything.
-    """
-    if i < window:
-        return False
-    highs = [b["close"] for b in bars[i - window:i] if b.get("close")]
-    close = bars[i].get("close")
-    return bool(highs and close and close > max(highs))
-
-
-SETUPS = {
-    "delivery-spike": delivery_spike,
-    "delivery-breakout": delivery_and_breakout,
-    "accumulation": quiet_accumulation,
-    "breakout": plain_breakout,
-}
+# The setups, the liquidity floor and the cost figure live in nsetools.setups, so /nse-scan screens
+# exactly the rule this measures. They are re-exported here because callers and tests read them as
+# backtest.SETUPS and backtest.MIN_TURNOVER_LACS.
+from nsetools.setups import (COSTS_ROUND_TRIP_PERCENT, MIN_TURNOVER_LACS,  # noqa: E402,F401
+                             SETUPS, delivery_and_breakout, delivery_spike, oversold,
+                             oversold_bounce, plain_breakout, quiet_accumulation)
 
 
 # ---- the replay --------------------------------------------------------------------------------
@@ -258,8 +192,8 @@ def main(argv=None) -> int:
                     help="cache this many weekdays of the whole market, then stop")
     ap.add_argument("--setup", choices=sorted(SETUPS), help="which rule to replay")
     ap.add_argument("--hold", type=int, default=10, help="trading days to hold (default 10)")
-    ap.add_argument("--stop", type=float, default=5.0, help="stop, percent below entry (default 5)")
-    ap.add_argument("--target", type=float, help="optional target, percent above entry")
+    ap.add_argument("--stop", type=show.number, default=5.0, help="stop, percent below entry (default 5)")
+    ap.add_argument("--target", type=show.number, help="optional target, percent above entry")
     ap.add_argument("--window", type=int, default=20, help="lookback the rule uses (default 20)")
     ap.add_argument("--db", default="nse/prices.sqlite")
     ap.add_argument("--trades", action="store_true", help="list every trade")
@@ -319,4 +253,4 @@ def main(argv=None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    show.run(main)

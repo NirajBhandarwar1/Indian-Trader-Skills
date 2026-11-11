@@ -6,7 +6,7 @@ description: >-
   over the same days. Caches daily bars locally so a replay is offline. Use when
   asked whether a rule works, to test an idea before trading it, or to check a
   claimed edge.
-argument-hint: "[--fetch DAYS] [--setup delivery-spike|delivery-breakout|accumulation|breakout] [--hold N] [--stop PCT]"
+argument-hint: "[--fetch DAYS] [--setup delivery-spike|delivery-breakout|accumulation|breakout|oversold|oversold-bounce] [--hold N] [--stop PCT]"
 ---
 
 # Replay
@@ -26,14 +26,15 @@ Scripts live in `${CLAUDE_SKILL_DIR}`.
 ## Commands
 
 ```bash
-python ${CLAUDE_SKILL_DIR}/backtest.py --fetch 250                       # cache a year, once
-python ${CLAUDE_SKILL_DIR}/backtest.py --setup delivery-spike            # replay it
-python ${CLAUDE_SKILL_DIR}/backtest.py --setup breakout --hold 5 --stop 3
-python ${CLAUDE_SKILL_DIR}/backtest.py --setup delivery-spike --trades   # list every trade
+python "${CLAUDE_SKILL_DIR}/backtest.py" --fetch 250                       # cache a year, once
+python "${CLAUDE_SKILL_DIR}/backtest.py" --setup delivery-spike            # replay it
+python "${CLAUDE_SKILL_DIR}/backtest.py" --setup breakout --hold 5 --stop 3
+python "${CLAUDE_SKILL_DIR}/backtest.py" --setup delivery-spike --trades   # list every trade
 ```
 
 `--hold N` trading days (default 10), `--stop PCT` below entry (default 5), `--target PCT`
-optional, `--window N` the lookback a rule uses (default 20), `--json` machine readable.
+optional, `--window N` the lookback a rule uses (default 20), `--db FILE` a price cache other than
+`nse/prices.sqlite`, `--json` machine readable.
 
 ## What it reads and writes
 
@@ -54,23 +55,39 @@ they are not asked about twice. 75 days is about 25 MB.
 | `delivery-breakout` | close above the window's high **and** delivery above its median |
 | `accumulation` | delivery up more than 25% over the window while price moved under 5% |
 | `breakout` | close above the window's high. **The control** — it ignores delivery entirely |
+| `oversold` | Wilder's RSI 14 under 30 — the same arithmetic as the US pack, identical on real data |
+| `oversold-bounce` | RSI 14 under 30 yesterday, and a higher close today |
 
 `breakout` is there on purpose. If a delivery setup does not beat it, the delivery number is adding
 nothing and you have learned something more useful than a win rate.
 
+The rules live in the shared `setups` module, which `/nse-scan` reads too, so a rule is always
+screened on exactly the definition it was measured on.
+
 ## What it measured, 2026-07-13 to 2026-10-23
 
-75 trading days, 2,226 symbols, holding 10 days with a 5% stop:
+75 trading days, 2,226 symbols, holding 10 days with a 5% stop. Re-measured on 2026-10-24:
 
 | Setup | Trades | Win rate | Average | Edge |
 |---|---|---|---|---|
 | `delivery-spike` | 57 | 33.3% | **+0.78%** | **+2.67pp** |
-| `accumulation` | 2,158 | 29.7% | −1.15% | +0.74pp |
 | `breakout` | 5,235 | 26.9% | −1.36% | +0.53pp |
-| `delivery-breakout` | 1,495 | 28.0% | −1.24% | +0.65pp |
+| `delivery-breakout` | 1,495 | 28.0% | −1.38% | +0.51pp |
+| `accumulation` | 2,158 | 29.7% | −1.55% | +0.34pp |
+| `oversold` | 6,164 | 25.8% | −1.92% | **−0.03pp** |
+| `oversold-bounce` | 2,637 | 23.2% | −2.28% | **−0.39pp** |
 
 Baseline over the same days: **31.6% win rate, −1.89% average.** The market fell, so everything lost
 money; most of these rules just lost less.
+
+**The two RSI rules lost to buying anything at all.** Buying Indian stocks because they looked
+oversold did slightly worse than buying at random over these 75 days, and buying the first up day
+afterwards did worse still. That is the result, not a reason to drop the rules: it is exactly what
+a record is for.
+
+An earlier version of this table showed `accumulation` at −1.15% and +0.74pp and `delivery-breakout`
+at −1.24% and +0.65pp. Those were stale — measured before the fix that fills a gap through the stop
+at the open — and they flattered both rules. The figures above are a fresh run.
 
 **Read this honestly.** `delivery-spike` is the only one that made money, and it fired 57 times in
 75 days. Fifty-seven trades is not evidence of anything — the skill says so in its own output. The
